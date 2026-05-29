@@ -1,0 +1,24 @@
+[project]
+name = "workbook-cli"
+version = "0.1.0"
+description = "Agent-friendly CLI for Workbook timesheets"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Ross Meyer" }]
+dependencies = [
+    "python-dotenv>=1.0",
+    "playwright>=1.40",
+    "requests>=2.32",
+    "rich>=13.0",
+]
+
+[project.scripts]
+workbook-cli = "workbook_cli.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
