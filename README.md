@@ -2,7 +2,7 @@
 
 Agent-friendly CLI for Workbook timesheets. It uses Playwright to authenticate through Workbook/Okta, stores its own session state, and talks directly to Workbook's internal JSON API.
 
-The CLI is designed for agents: input is JSON on the command line or stdin, output is JSON.
+The CLI is designed for agents: input is JSON on the command line or stdin, and output is JSON by default. For human use, pass `--format table` before the command group to render Rich tables.
 
 ## Install
 
@@ -37,6 +37,7 @@ No state is shared with other timesheet tools.
 workbook-cli auth
 workbook-cli auth --headed
 workbook-cli auth status --pretty
+workbook-cli --format table auth status
 workbook-cli auth clear
 ```
 
@@ -48,6 +49,8 @@ Headless auth uses `WORKBOOK_EMAIL` and `WORKBOOK_PASSWORD` from `~/.config/work
 workbook-cli jobs refresh --pretty
 workbook-cli jobs search nespresso --pretty
 workbook-cli jobs tasks 465430 --pretty
+workbook-cli --format table jobs search nespresso
+workbook-cli --format table jobs tasks 465430
 ```
 
 ## Timesheets
@@ -56,6 +59,7 @@ Show current week:
 
 ```bash
 workbook-cli timesheet show --pretty
+workbook-cli --format table timesheet show
 ```
 
 Submit JSON:
@@ -82,6 +86,7 @@ Dry run:
 
 ```bash
 workbook-cli timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --pretty
+workbook-cli --format table timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]'
 ```
 
 Previous week:

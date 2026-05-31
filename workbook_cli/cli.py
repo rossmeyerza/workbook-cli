@@ -10,6 +10,17 @@ from .client import WorkbookClient
 from .dates import week_dates, week_start
 from .jobs import fetch_jobs_with_tasks, load_jobs_cache, save_jobs_cache, search_jobs
 from .jsonio import print_json, read_json_arg
+from .render import (
+    render_auth,
+    render_jobs,
+    render_me,
+    render_paths,
+    render_refresh,
+    render_submit,
+    render_tasks,
+    render_timesheet,
+    write_output,
+)
 from .timesheet import submit_entries, summarize_week
 
 
@@ -24,26 +35,26 @@ def cmd_auth(args: argparse.Namespace) -> None:
     command = args.auth_command or "login"
     if command == "clear":
         clear_auth_state()
-        print_json({"ok": True, "cleared": True}, pretty=args.pretty)
+        write_output({"ok": True, "cleared": True}, args=args, renderer=render_auth)
         return
 
     if command == "status":
         client = WorkbookClient()
         ok = client.login(headless=True, force=False)
-        print_json({
+        write_output({
             "ok": ok,
             "user": client.me() if ok else None,
             "cookies_file": str(config.COOKIES_FILE),
             "browser_state_file": str(config.BROWSER_STATE_FILE),
-        }, pretty=args.pretty)
+        }, args=args, renderer=render_auth)
         return
 
     client = _client(headless=not args.headed, force=args.force)
-    print_json({"ok": True, "user": client.me()}, pretty=args.pretty)
+    write_output({"ok": True, "user": client.me()}, args=args, renderer=render_auth)
 
 
 def cmd_me(args: argparse.Namespace) -> None:
-    print_json(_client().me(), pretty=args.pretty)
+    write_output(_client().me(), args=args, renderer=render_me)
 
 
 def _jobs_for_args(args: argparse.Namespace, client: WorkbookClient) -> list[dict]:
@@ -63,31 +74,35 @@ def cmd_jobs(args: argparse.Namespace) -> None:
     client = _client()
     if args.jobs_command == "tasks":
         tasks = client.get_tasks_for_job(args.job_id)
-        print_json({
+        write_output({
             "job_id": args.job_id,
             "tasks": [
                 {"task_id": task.get("Id"), "task_name": task.get("TaskName", "")}
                 for task in tasks
             ],
-        }, pretty=args.pretty)
+        }, args=args, renderer=render_tasks)
         return
 
     if args.jobs_command == "refresh":
         jobs = fetch_jobs_with_tasks(client, week_dates(args.week_offset)["Mon"])
         save_jobs_cache(jobs)
-        print_json({"ok": True, "count": len(jobs), "cache_file": str(config.JOBS_CACHE_FILE)}, pretty=args.pretty)
+        write_output(
+            {"ok": True, "count": len(jobs), "cache_file": str(config.JOBS_CACHE_FILE)},
+            args=args,
+            renderer=render_refresh,
+        )
         return
 
     jobs = _jobs_for_args(args, client)
     if args.jobs_command == "search":
         jobs = search_jobs(jobs, args.query)
-    print_json({"count": len(jobs), "jobs": jobs}, pretty=args.pretty)
+    write_output({"count": len(jobs), "jobs": jobs}, args=args, renderer=render_jobs)
 
 
 def cmd_timesheet(args: argparse.Namespace) -> None:
     client = _client()
     if args.timesheet_command == "show":
-        print_json(summarize_week(client, args.week_offset), pretty=args.pretty)
+        write_output(summarize_week(client, args.week_offset), args=args, renderer=render_timesheet)
         return
 
     payload = read_json_arg(args.json, args.json_file)
@@ -98,25 +113,25 @@ def cmd_timesheet(args: argparse.Namespace) -> None:
         dry_run=args.dry_run,
         separate_rows=args.separate_rows,
     )
-    print_json(result, pretty=args.pretty)
+    write_output(result, args=args, renderer=render_submit)
     if not result["ok"]:
         raise SystemExit(1)
 
 
 def cmd_config(args: argparse.Namespace) -> None:
     if args.config_command == "paths":
-        print_json({
+        write_output({
             "config_file": str(config.CONFIG_FILE),
             "data_dir": str(config.DATA_DIR),
             "cookies_file": str(config.COOKIES_FILE),
             "browser_state_file": str(config.BROWSER_STATE_FILE),
             "jobs_cache_file": str(config.JOBS_CACHE_FILE),
-        }, pretty=args.pretty)
+        }, args=args, renderer=render_paths)
         return
 
     config.ensure_dirs()
     if config.CONFIG_FILE.exists() and not args.force:
-        print_json({"ok": False, "error": f"{config.CONFIG_FILE} already exists; use --force"}, pretty=args.pretty)
+        write_output({"ok": False, "error": f"{config.CONFIG_FILE} already exists; use --force"}, args=args)
         raise SystemExit(1)
     content = (
         f"WORKBOOK_URL={args.url}\n"
@@ -125,11 +140,12 @@ def cmd_config(args: argparse.Namespace) -> None:
     )
     config.CONFIG_FILE.write_text(content)
     config.CONFIG_FILE.chmod(0o600)
-    print_json({"ok": True, "config_file": str(config.CONFIG_FILE)}, pretty=args.pretty)
+    write_output({"ok": True, "config_file": str(config.CONFIG_FILE)}, args=args, renderer=render_paths)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="workbook-cli", description="Agent-friendly Workbook timesheet CLI")
+    parser.add_argument("--format", choices=["json", "table"], default="json", help="Output format (default: json)")
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
     sub = parser.add_subparsers(dest="domain", required=True)
 
