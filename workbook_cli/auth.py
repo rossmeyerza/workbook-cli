@@ -11,6 +11,15 @@ from . import config
 console = Console(stderr=True)
 
 
+def _saml_url() -> str:
+    return f"{config.WORKBOOK_URL.rstrip('/')}/api/auth/saml"
+
+
+def _is_login_url(url: str) -> bool:
+    lower = url.lower()
+    return "login.microsoft" in lower or "okta" in lower
+
+
 def save_cookies(cookies: list[dict]) -> None:
     config.ensure_dirs()
     config.COOKIES_FILE.write_text(json.dumps(cookies, indent=2))
@@ -36,14 +45,36 @@ def clear_auth_state() -> None:
 def _enter_email(page, email: str) -> bool:
     if not email:
         return False
-    try:
-        page.wait_for_selector('input[type="email"]', timeout=10000)
-        page.fill('input[type="email"]', email)
-        page.click('input[type="submit"]')
-        page.wait_for_timeout(2500)
-        return True
-    except Exception:
+    for selector in (
+        'input[type="email"]',
+        'input[name="identifier"]',
+        'input[name="loginfmt"]',
+        'input[name="username"]',
+    ):
+        try:
+            page.wait_for_selector(selector, timeout=8000)
+            page.fill(selector, email)
+            break
+        except Exception:
+            continue
+    else:
         return False
+
+    for selector in (
+        'input[type="submit"]',
+        'button[type="submit"]',
+        "#idSIButton9",
+        "#okta-signin-submit",
+    ):
+        try:
+            button = page.locator(selector).first
+            if button.is_visible(timeout=2000):
+                button.click()
+                page.wait_for_timeout(2500)
+                return True
+        except Exception:
+            continue
+    return True
 
 
 def _enter_password(page, password: str) -> bool:
@@ -136,6 +167,19 @@ def _wait_for_mfa_or_workbook(page) -> None:
         console.print(f"[yellow]Timed out waiting for Workbook redirect: {exc}[/]")
 
 
+def _complete_login_if_needed(page) -> None:
+    for _ in range(4):
+        page.wait_for_timeout(1000)
+        if "workbook.dk" in page.url.lower() and not _is_login_url(page.url):
+            return
+
+        entered_email = _enter_email(page, config.WORKBOOK_EMAIL)
+        entered_password = _enter_password(page, config.WORKBOOK_PASSWORD)
+        if entered_email or entered_password or _is_login_url(page.url):
+            _wait_for_mfa_or_workbook(page)
+            return
+
+
 def login_via_browser(*, headless: bool = True) -> list[dict]:
     config.ensure_dirs()
     if headless and (not config.WORKBOOK_EMAIL or not config.WORKBOOK_PASSWORD):
@@ -151,23 +195,12 @@ def login_via_browser(*, headless: bool = True) -> list[dict]:
         context = browser.new_context(**context_options)
         page = context.new_page()
 
-        page.goto(config.WORKBOOK_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
-
-        login_url = page.url.lower()
-        on_login_page = "login.microsoft" in login_url or "okta" in login_url
-        if on_login_page:
-            _enter_email(page, config.WORKBOOK_EMAIL)
-            _enter_password(page, config.WORKBOOK_PASSWORD)
-            _wait_for_mfa_or_workbook(page)
-        else:
-            try:
-                page.wait_for_url(re.compile(r".*workbook\.dk.*"), timeout=30000)
-            except Exception:
-                pass
+        page.goto(_saml_url(), wait_until="domcontentloaded")
+        _complete_login_if_needed(page)
 
         page.goto(config.WORKBOOK_URL, wait_until="domcontentloaded")
         page.wait_for_timeout(3000)
+        _complete_login_if_needed(page)
 
         cookies = context.cookies()
         context.storage_state(path=str(config.BROWSER_STATE_FILE))

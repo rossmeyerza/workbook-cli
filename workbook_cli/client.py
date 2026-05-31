@@ -22,12 +22,12 @@ class WorkbookClient:
 
         cookies = login_via_browser(headless=headless)
         self._set_cookies(cookies)
-        self.csrf_token = self.session.cookies.get("CSRF-Token")
+        self._ensure_csrf_token()
         self._setup_headers()
         if self.handshake():
-            save_cookies(cookies)
+            save_cookies(self._cookies_for_save())
             return True
-        return False
+        raise RuntimeError("Workbook authentication failed: handshake did not return a user session")
 
     def _set_cookies(self, cookies: list[dict]) -> None:
         self.session = requests.Session()
@@ -47,6 +47,17 @@ class WorkbookClient:
         self.csrf_token = self.session.cookies.get("CSRF-Token")
         return bool(self.csrf_token)
 
+    def _cookies_for_save(self) -> list[dict]:
+        return [
+            {
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie.domain,
+                "path": cookie.path,
+            }
+            for cookie in self.session.cookies
+        ]
+
     def _setup_headers(self) -> None:
         self.session.headers.update({
             "Content-Type": "application/json; charset=UTF-8",
@@ -56,6 +67,25 @@ class WorkbookClient:
             "Origin": config.WORKBOOK_URL,
             "Referer": f"{config.WORKBOOK_URL}/",
         })
+
+    def _ensure_csrf_token(self) -> None:
+        self.csrf_token = self.session.cookies.get("CSRF-Token")
+        if self.csrf_token:
+            return
+
+        response = self.session.get(
+            f"{config.WORKBOOK_URL}/api/auth/currentsession",
+            params={"CSRFCookie": "true"},
+            timeout=config.API_TIMEOUT,
+        )
+        if response.status_code not in (200, 204):
+            raise RuntimeError(
+                f"Workbook authentication failed: current session returned HTTP {response.status_code}"
+            )
+
+        self.csrf_token = self.session.cookies.get("CSRF-Token")
+        if not self.csrf_token:
+            raise RuntimeError("Workbook authentication failed: CSRF-Token cookie was not set")
 
     def handshake(self) -> bool:
         response = self.session.post(
