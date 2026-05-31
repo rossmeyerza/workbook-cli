@@ -15,6 +15,9 @@ dependencies = [
 [project.scripts]
 workbook-cli = "workbook_cli.cli:main"
 
+[tool.setuptools.packages.find]
+include = ["workbook_cli*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
