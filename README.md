@@ -2,7 +2,7 @@
 
 Agent-friendly CLI for Workbook timesheets. It uses Playwright to authenticate through Workbook/Okta, stores its own session state, and talks directly to Workbook's internal JSON API.
 
-The CLI is designed for agents: input is JSON on the command line or stdin, and output is JSON by default. For human use, pass `--format table` before the command group to render Rich tables.
+The CLI is designed for agents: input is JSON on the command line or stdin, and output is JSON by default. For human use, pass `--format table` to render Rich tables. It can appear before the command group or at the end of the command.
 
 ## Install
 
@@ -38,6 +38,7 @@ workbook-cli auth
 workbook-cli auth --headed
 workbook-cli auth status --pretty
 workbook-cli --format table auth status
+workbook-cli auth status --format table
 workbook-cli auth clear
 ```
 
@@ -51,6 +52,8 @@ workbook-cli jobs search nespresso --pretty
 workbook-cli jobs tasks 465430 --pretty
 workbook-cli --format table jobs search nespresso
 workbook-cli --format table jobs tasks 465430
+workbook-cli jobs search nespresso --format table
+workbook-cli jobs tasks 465430 --format table
 ```
 
 ## Timesheets
@@ -60,6 +63,7 @@ Show current week:
 ```bash
 workbook-cli timesheet show --pretty
 workbook-cli --format table timesheet show
+workbook-cli timesheet show --format table
 ```
 
 Submit JSON:
@@ -87,6 +91,7 @@ Dry run:
 ```bash
 workbook-cli timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --pretty
 workbook-cli --format table timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]'
+workbook-cli timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --format table
 ```
 
 Previous week:

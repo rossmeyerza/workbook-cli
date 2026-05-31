@@ -143,42 +143,67 @@ def cmd_config(args: argparse.Namespace) -> None:
     write_output({"ok": True, "config_file": str(config.CONFIG_FILE)}, args=args, renderer=render_paths)
 
 
+def add_output_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--format",
+        choices=["json", "table"],
+        default=argparse.SUPPRESS,
+        help="Output format (default: json)",
+    )
+    parser.add_argument(
+        "--pretty",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Pretty-print JSON output",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="workbook-cli", description="Agent-friendly Workbook timesheet CLI")
-    parser.add_argument("--format", choices=["json", "table"], default="json", help="Output format (default: json)")
-    parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
+    parser.set_defaults(format="json", pretty=False)
+    add_output_args(parser)
     sub = parser.add_subparsers(dest="domain", required=True)
 
     p_auth = sub.add_parser("auth", help="Manage Workbook authentication")
+    add_output_args(p_auth)
     p_auth.add_argument("auth_command", nargs="?", choices=["login", "status", "clear"], default="login")
     p_auth.add_argument("--headed", action="store_true", help="Use a visible browser")
     p_auth.add_argument("--force", action="store_true", help="Force browser login")
     p_auth.set_defaults(func=cmd_auth)
 
     p_me = sub.add_parser("me", help="Show current Workbook user")
+    add_output_args(p_me)
     p_me.set_defaults(func=cmd_me)
 
     p_jobs = sub.add_parser("jobs", help="Search Workbook jobs and tasks")
+    add_output_args(p_jobs)
     p_jobs.add_argument("--week-offset", type=int, default=0)
     p_jobs.add_argument("--refresh", action="store_true", help="Refresh job cache first")
     jobs_sub = p_jobs.add_subparsers(dest="jobs_command", required=True)
     p_jobs_list = jobs_sub.add_parser("list", help="List cached jobs")
+    add_output_args(p_jobs_list)
     p_jobs_list.set_defaults(func=cmd_jobs)
     p_jobs_search = jobs_sub.add_parser("search", help="Search jobs/tasks")
+    add_output_args(p_jobs_search)
     p_jobs_search.add_argument("query")
     p_jobs_search.set_defaults(func=cmd_jobs)
     p_jobs_tasks = jobs_sub.add_parser("tasks", help="List tasks for a job")
+    add_output_args(p_jobs_tasks)
     p_jobs_tasks.add_argument("job_id", type=int)
     p_jobs_tasks.set_defaults(func=cmd_jobs)
     p_jobs_refresh = jobs_sub.add_parser("refresh", help="Refresh job/task cache")
+    add_output_args(p_jobs_refresh)
     p_jobs_refresh.set_defaults(func=cmd_jobs)
 
     p_ts = sub.add_parser("timesheet", help="Show or submit timesheets")
+    add_output_args(p_ts)
     p_ts.add_argument("--week-offset", type=int, default=0)
     ts_sub = p_ts.add_subparsers(dest="timesheet_command", required=True)
     p_ts_show = ts_sub.add_parser("show", help="Show a week")
+    add_output_args(p_ts_show)
     p_ts_show.set_defaults(func=cmd_timesheet)
     p_ts_submit = ts_sub.add_parser("submit", help="Submit JSON timesheet entries")
+    add_output_args(p_ts_submit)
     p_ts_submit.add_argument("--json", help="JSON array payload, or '-' for stdin")
     p_ts_submit.add_argument("--json-file", help="Read JSON array payload from a file")
     p_ts_submit.add_argument("--dry-run", action="store_true", help="Plan changes without writing")
@@ -186,10 +211,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_ts_submit.set_defaults(func=cmd_timesheet)
 
     p_config = sub.add_parser("config", help="Manage local configuration")
+    add_output_args(p_config)
     cfg_sub = p_config.add_subparsers(dest="config_command", required=True)
     p_cfg_paths = cfg_sub.add_parser("paths", help="Show state/config paths")
+    add_output_args(p_cfg_paths)
     p_cfg_paths.set_defaults(func=cmd_config)
     p_cfg_init = cfg_sub.add_parser("init", help="Write ~/.config/workbook-cli/.env")
+    add_output_args(p_cfg_init)
     p_cfg_init.add_argument("--url", default=config.WORKBOOK_URL)
     p_cfg_init.add_argument("--email", required=True)
     p_cfg_init.add_argument("--password", required=True)
