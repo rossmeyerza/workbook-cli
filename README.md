@@ -2,7 +2,7 @@
 
 Agent-friendly CLI for Workbook timesheets. It uses Playwright to authenticate through Workbook/Okta, stores its own session state, and talks directly to Workbook's internal JSON API.
 
-The CLI is designed for agents: input is JSON on the command line or stdin, and output is JSON by default. For human use, pass `--format table` to render Rich tables. It can appear before the command group or at the end of the command.
+The CLI is designed for agents: input is JSON on the command line or stdin, and output is JSON by default. For human use, pass `--table` to render Rich tables. Use `--json` to explicitly request JSON output.
 
 ## Install
 
@@ -37,8 +37,8 @@ No state is shared with other timesheet tools.
 workbook-cli auth
 workbook-cli auth --headed
 workbook-cli auth status --pretty
-workbook-cli --format table auth status
-workbook-cli auth status --format table
+workbook-cli --table auth status
+workbook-cli auth status --table
 workbook-cli auth clear
 ```
 
@@ -50,10 +50,10 @@ Headless auth uses `WORKBOOK_EMAIL` and `WORKBOOK_PASSWORD` from `~/.config/work
 workbook-cli jobs refresh --pretty
 workbook-cli jobs search nespresso --pretty
 workbook-cli jobs tasks 465430 --pretty
-workbook-cli --format table jobs search nespresso
-workbook-cli --format table jobs tasks 465430
-workbook-cli jobs search nespresso --format table
-workbook-cli jobs tasks 465430 --format table
+workbook-cli --table jobs search nespresso
+workbook-cli --table jobs tasks 465430
+workbook-cli jobs search nespresso --table
+workbook-cli jobs tasks 465430 --table
 ```
 
 ## Timesheets
@@ -62,14 +62,14 @@ Show current week:
 
 ```bash
 workbook-cli timesheet show --pretty
-workbook-cli --format table timesheet show
-workbook-cli timesheet show --format table
+workbook-cli --table timesheet show
+workbook-cli timesheet show --table
 ```
 
 Submit JSON:
 
 ```bash
-workbook-cli timesheet submit --json '[
+workbook-cli timesheet submit --input-json '[
   {
     "job_id": 465430,
     "task_id": 2886954,
@@ -83,22 +83,22 @@ Use stdin:
 
 ```bash
 printf '%s\n' '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1},"description":"Review work"}]' \
-  | workbook-cli timesheet submit --json -
+  | workbook-cli timesheet submit --input-json -
 ```
 
 Dry run:
 
 ```bash
-workbook-cli timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --pretty
-workbook-cli --format table timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]'
-workbook-cli timesheet submit --dry-run --json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --format table
+workbook-cli timesheet submit --dry-run --input-json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --pretty
+workbook-cli --table timesheet submit --dry-run --input-json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]'
+workbook-cli timesheet submit --dry-run --input-json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --table
 ```
 
 Previous week:
 
 ```bash
 workbook-cli timesheet --week-offset -1 show --pretty
-workbook-cli timesheet --week-offset -1 submit --json '[...]'
+workbook-cli timesheet --week-offset -1 submit --input-json '[...]'
 ```
 
 ## JSON Schema
@@ -118,6 +118,8 @@ Batch submission expects a JSON array:
   }
 ]
 ```
+
+`--input-json` is the preferred payload flag. The older `timesheet submit --json '[...]'` form still works for compatibility, but `--json` by itself means JSON output.
 
 `hours` can also be a number, which applies to every weekday.
 

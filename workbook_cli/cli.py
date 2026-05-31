@@ -105,7 +105,7 @@ def cmd_timesheet(args: argparse.Namespace) -> None:
         write_output(summarize_week(client, args.week_offset), args=args, renderer=render_timesheet)
         return
 
-    payload = read_json_arg(args.json, args.json_file)
+    payload = read_json_arg(args.input_json, args.json_file)
     result = submit_entries(
         client,
         payload,
@@ -145,10 +145,26 @@ def cmd_config(args: argparse.Namespace) -> None:
 
 def add_output_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
+        "--table",
+        action="store_const",
+        const="table",
+        dest="format",
+        default=argparse.SUPPRESS,
+        help="Render human-friendly tables",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_const",
+        const="json",
+        dest="format",
+        default=argparse.SUPPRESS,
+        help="Render JSON output (default)",
+    )
+    parser.add_argument(
         "--format",
         choices=["json", "table"],
         default=argparse.SUPPRESS,
-        help="Output format (default: json)",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--pretty",
@@ -204,7 +220,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ts_show.set_defaults(func=cmd_timesheet)
     p_ts_submit = ts_sub.add_parser("submit", help="Submit JSON timesheet entries")
     add_output_args(p_ts_submit)
-    p_ts_submit.add_argument("--json", help="JSON array payload, or '-' for stdin")
+    p_ts_submit.add_argument("--input-json", help="JSON array payload, or '-' for stdin")
     p_ts_submit.add_argument("--json-file", help="Read JSON array payload from a file")
     p_ts_submit.add_argument("--dry-run", action="store_true", help="Plan changes without writing")
     p_ts_submit.add_argument("--separate-rows", action="store_true", help="Always create new Workbook rows")
@@ -227,9 +243,39 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def normalize_legacy_submit_json(argv: list[str]) -> list[str]:
+    """Keep `timesheet submit --json '[...]'` working after adding output --json.
+
+    Outside `timesheet submit`, --json means JSON output. Inside submit, --json
+    with an attached value or following value is the legacy input-payload flag.
+    """
+    result = []
+    in_submit = False
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        result.append(token)
+        if token == "submit" and "timesheet" in result:
+            in_submit = True
+        if in_submit and token.startswith("--json="):
+            result[-1] = "--input-json=" + token.split("=", 1)[1]
+        elif (
+            in_submit
+            and token == "--json"
+            and index + 1 < len(argv)
+            and (argv[index + 1] == "-" or not argv[index + 1].startswith("-"))
+        ):
+            result[-1] = "--input-json"
+            index += 1
+            result.append(argv[index])
+        index += 1
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    normalised_argv = normalize_legacy_submit_json(list(argv if argv is not None else sys.argv[1:]))
+    args = parser.parse_args(normalised_argv)
     try:
         args.func(args)
         return 0
