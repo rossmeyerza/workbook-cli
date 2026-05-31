@@ -208,5 +208,4 @@ def login_via_browser(*, headless: bool = True) -> list[dict]:
         context.close()
         browser.close()
 
-    save_cookies(cookies)
     return cookies
