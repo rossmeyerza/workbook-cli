@@ -86,6 +86,13 @@ if [ "$NEEDS_CONFIG" = true ]; then
   step "Configuration"
   printf "workbook-cli needs your Workbook/Okta email and password.\n"
   printf "These are stored only in %s with mode 600.\n\n" "$CONFIG_FILE"
+  if [ ! -r /dev/tty ]; then
+    warn "No interactive terminal is available, so configuration was not written."
+    warn "Run this later from a terminal:"
+    warn "  workbook-cli config init --email you@company.com --password 'your-password'"
+    warn "Or rerun: ${INSTALL_DIR}/install.sh --reconfigure"
+    NEEDS_CONFIG=false
+  else
   exec 3</dev/tty
 
   printf "WORKBOOK_URL [%s]: " "${WORKBOOK_URL_CURRENT:-https://wunderman.workbook.dk}"
@@ -123,6 +130,7 @@ WORKBOOK_PASSWORD=${WORKBOOK_PASSWORD}
 EOF
   chmod 600 "$CONFIG_FILE"
   ok "Config written"
+  fi
 else
   ok "Config already exists; use --reconfigure to rewrite"
 fi
