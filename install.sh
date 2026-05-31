@@ -86,7 +86,7 @@ if [ "$NEEDS_CONFIG" = true ]; then
   step "Configuration"
   printf "workbook-cli needs your Workbook/Okta email and password.\n"
   printf "These are stored only in %s with mode 600.\n\n" "$CONFIG_FILE"
-  if ! exec 3</dev/tty; then
+  if ! { exec 3</dev/tty; } 2>/dev/null; then
     warn "No interactive terminal is available, so configuration was not written."
     warn "Run this later from a terminal:"
     warn "  workbook-cli config init --email you@company.com --password 'your-password'"
