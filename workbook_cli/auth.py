@@ -128,6 +128,19 @@ def _click_okta_login_if_present(page) -> bool:
     return False
 
 
+def _body_text(page) -> str:
+    try:
+        value = page.locator("body").inner_text(timeout=2000)
+        return value or ""
+    except Exception:
+        return ""
+
+
+def _has_okta_password_error(page) -> bool:
+    text = _body_text(page).lower()
+    return "unable to sign in" in text or "incorrect password" in text or "password is incorrect" in text
+
+
 def save_cookies(cookies: list[dict]) -> None:
     config.ensure_dirs()
     config.COOKIES_FILE.write_text(json.dumps(cookies, indent=2))
@@ -184,7 +197,7 @@ def _enter_email(page, email: str) -> bool:
             except Exception:
                 continue
 
-        console.print(f"[dim]  Entered email: {email}[/]")
+        console.print("[dim]  Entered email[/]")
         page.wait_for_timeout(3000)
         return True
     except Exception as exc:
@@ -227,6 +240,11 @@ def _enter_password(page, password: str) -> bool:
 
         console.print("[dim]  Entered password[/]")
         page.wait_for_timeout(3000)
+        if _has_okta_password_error(page):
+            raise RuntimeError(
+                "Workbook Okta rejected the password before MFA. "
+                "Update WORKBOOK_PASSWORD in ~/.config/workbook-cli/.env."
+            )
         return True
     except Exception as exc:
         console.print(f"[red]Failed to enter password: {exc}[/]")
@@ -265,6 +283,11 @@ def _wait_for_mfa_or_workbook(page) -> None:
 
     for _ in range(30):
         page.wait_for_timeout(500)
+        if _has_okta_password_error(page):
+            raise RuntimeError(
+                "Workbook Okta rejected the password before MFA. "
+                "Update WORKBOOK_PASSWORD in ~/.config/workbook-cli/.env."
+            )
         mfa_number = _find_mfa_number(page)
         if mfa_number:
             break
@@ -282,7 +305,7 @@ def _wait_for_mfa_or_workbook(page) -> None:
             f" in your authenticator app[/]\n"
         )
     else:
-        console.print("[yellow]Approve the MFA push notification on your phone...[/]")
+        console.print("[yellow]No MFA number was shown. Approve the MFA push notification on your phone if one appears...[/]")
 
     console.print("[dim]Waiting for MFA approval (up to 3 minutes)...[/]")
     try:
