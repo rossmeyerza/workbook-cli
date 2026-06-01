@@ -246,6 +246,8 @@ def _enter_password(page, password: str) -> bool:
                 "Update WORKBOOK_PASSWORD in ~/.config/workbook-cli/.env."
             )
         return True
+    except RuntimeError:
+        raise
     except Exception as exc:
         console.print(f"[red]Failed to enter password: {exc}[/]")
         return False
