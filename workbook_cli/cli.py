@@ -24,9 +24,9 @@ from .render import (
 from .timesheet import submit_entries, summarize_week
 
 
-def _client(*, headless: bool = True, force: bool = False) -> WorkbookClient:
+def _client(*, headless: bool = True, force: bool = False, debug_auth: bool = False) -> WorkbookClient:
     client = WorkbookClient()
-    if not client.login(headless=headless, force=force):
+    if not client.login(headless=headless, force=force, debug_auth=debug_auth):
         raise RuntimeError("Workbook authentication failed")
     return client
 
@@ -40,7 +40,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
 
     if command == "status":
         client = WorkbookClient()
-        ok = client.login(headless=True, force=False)
+        ok = client.login(headless=True, force=False, debug_auth=getattr(args, "debug_auth", False))
         write_output({
             "ok": ok,
             "user": client.me() if ok else None,
@@ -49,7 +49,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
         }, args=args, renderer=render_auth)
         return
 
-    client = _client(headless=not args.headed, force=args.force)
+    client = _client(headless=not args.headed, force=args.force, debug_auth=args.debug_auth)
     write_output({"ok": True, "user": client.me()}, args=args, renderer=render_auth)
 
 
@@ -185,6 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_auth.add_argument("auth_command", nargs="?", choices=["login", "status", "clear"], default="login")
     p_auth.add_argument("--headed", action="store_true", help="Use a visible browser")
     p_auth.add_argument("--force", action="store_true", help="Force browser login")
+    p_auth.add_argument("--debug-auth", action="store_true", help="Save Playwright auth trace and redacted page snapshots")
     p_auth.set_defaults(func=cmd_auth)
 
     p_me = sub.add_parser("me", help="Show current Workbook user")

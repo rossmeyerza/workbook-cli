@@ -11,6 +11,7 @@ CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / 
 DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "workbook-cli"
 SESSION_DIR = DATA_DIR / "session_state"
 CACHE_DIR = DATA_DIR / "cache"
+DEBUG_DIR = DATA_DIR / "debug"
 
 CONFIG_FILE = CONFIG_DIR / ".env"
 PROJECT_ENV_FILE = PACKAGE_ROOT / ".env"
@@ -34,3 +35,4 @@ def ensure_dirs() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)

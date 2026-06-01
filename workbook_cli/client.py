@@ -14,13 +14,13 @@ class WorkbookClient:
         self.user_name: str | None = None
         self.csrf_token: str | None = None
 
-    def login(self, *, headless: bool = True, force: bool = False) -> bool:
+    def login(self, *, headless: bool = True, force: bool = False, debug_auth: bool = False) -> bool:
         if not force and self._load_saved_cookies():
             self._setup_headers()
             if self.handshake():
                 return True
 
-        cookies = login_via_browser(headless=headless)
+        cookies = login_via_browser(headless=headless, debug_auth=debug_auth)
         self._set_cookies(cookies)
         self._ensure_csrf_token()
         self._setup_headers()
