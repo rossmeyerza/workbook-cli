@@ -2,9 +2,48 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
+
+
+# Common selectors for the cookie-consent "accept" buttons that appear after
+# SSO redirect. Until dismissed, the app never makes its first API call and
+# the CSRF-Token cookie is never set.
+_COOKIE_ACCEPT_SELECTORS = (
+    "#onetrust-accept-btn-handler",
+    "button#accept-recommended-btn-handler",
+    "button[aria-label='Accept all cookies']",
+    "button[aria-label='Accept All Cookies']",
+    "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+    "button:has-text('Accept all')",
+    "button:has-text('Accept All')",
+    "button:has-text('Accept cookies')",
+    "button:has-text('I accept')",
+    "button:has-text('Allow all')",
+)
+
+
+def _dismiss_cookie_banner(page) -> bool:
+    for selector in _COOKIE_ACCEPT_SELECTORS:
+        try:
+            locator = page.locator(selector).first
+            if locator.is_visible(timeout=500):
+                locator.click(timeout=2000)
+                page.wait_for_timeout(1000)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _wait_for_csrf_cookie(context, page, timeout_s: int = 90) -> None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if any(c["name"] == "CSRF-Token" for c in context.cookies()):
+            return
+        page.wait_for_timeout(1000)
 
 from playwright.sync_api import sync_playwright
 from rich.console import Console
@@ -373,6 +412,10 @@ def login_via_browser(*, headless: bool = True, debug_auth: bool = False) -> lis
             debug.capture(page, "06-workbook-final")
         except Exception:
             pass
+
+        _dismiss_cookie_banner(page)
+        _wait_for_csrf_cookie(context, page, timeout_s=90)
+        debug.capture(page, "07-after-cookie-banner")
 
         cookies = context.cookies()
         context.storage_state(path=str(config.BROWSER_STATE_FILE))

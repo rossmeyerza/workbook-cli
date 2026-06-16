@@ -1,9 +1,23 @@
 from __future__ import annotations
 
+from urllib.parse import unquote
+
 import requests
 
 from . import config
 from .auth import load_cookies, login_via_browser, save_cookies
+
+
+def _read_csrf_token(session: requests.Session) -> str:
+    """Return the CSRF cookie value, URL-decoded.
+
+    Workbook URL-encodes the base64 padding in its Set-Cookie (``...%3D%3D``).
+    The real browser client decodes it back to ``==`` before putting it in the
+    ``csrf-token`` request header; sending the encoded form yields a 403 with
+    an empty body on every mutating POST.
+    """
+    raw = session.cookies.get("CSRF-Token") or ""
+    return unquote(raw)
 
 
 class WorkbookClient:
@@ -44,7 +58,7 @@ class WorkbookClient:
         if not cookies:
             return False
         self._set_cookies(cookies)
-        self.csrf_token = self.session.cookies.get("CSRF-Token")
+        self.csrf_token = _read_csrf_token(self.session)
         return bool(self.csrf_token)
 
     def _cookies_for_save(self) -> list[dict]:
@@ -66,10 +80,16 @@ class WorkbookClient:
             "csrf-token": self.csrf_token or "",
             "Origin": config.WORKBOOK_URL,
             "Referer": f"{config.WORKBOOK_URL}/",
+            # As of mid-2026 Workbook rejects timesheet POSTs (403, empty body)
+            # without these headers. Server only checks presence; values are
+            # arbitrary in the real client.
+            "workbook-sender": "404",
+            "workbook-container": "#ui-id-17",
+            "workbook-communicationid": "236843154224",
         })
 
     def _ensure_csrf_token(self) -> None:
-        self.csrf_token = self.session.cookies.get("CSRF-Token")
+        self.csrf_token = _read_csrf_token(self.session)
         if self.csrf_token:
             return
 
@@ -83,7 +103,7 @@ class WorkbookClient:
                 f"Workbook authentication failed: current session returned HTTP {response.status_code}"
             )
 
-        self.csrf_token = self.session.cookies.get("CSRF-Token")
+        self.csrf_token = _read_csrf_token(self.session)
         if not self.csrf_token:
             raise RuntimeError("Workbook authentication failed: CSRF-Token cookie was not set")
 
@@ -163,7 +183,7 @@ class WorkbookClient:
         response = self.session.post(
             f"{config.WORKBOOK_URL}/api/json/reply/QuickInsertTimeRequest",
             json={
-                "taskid": str(task_id) if task_id else "",
+                "taskid": str(task_id) if task_id else None,
                 "jobid": job_id,
                 "resourceId": self.resource_id,
                 "date": date,
