@@ -374,7 +374,7 @@ class WorkbookClient:
                 "Id": entry_id,
                 "ActivityId": activity_id,
                 "Billable": billable,
-                "Hours": hours if hours > 0 else None,
+                "Hours": hours,
                 "TaskId": task_id or None,
                 "Description": description,
             },

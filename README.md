@@ -127,6 +127,19 @@ workbook-cli timesheet --week-offset -1 show --pretty
 workbook-cli timesheet --week-offset -1 submit --input-json '[...]'
 ```
 
+## Clear a timesheet entry
+
+Use `timesheet show` to find the entry ID in the correct week. Replace `ENTRY_ID` with that ID. Preview the change first.
+
+```bash
+workbook-cli timesheet delete ENTRY_ID
+workbook-cli timesheet delete ENTRY_ID --confirm
+```
+
+For MCP, use `timesheet_delete` with `entry_id`. Set `confirm: true` only after explicit approval. For a different week, use `week_offset` in MCP or `--week-offset` before `delete` in the CLI.
+
+The command sets hours to zero. It does not request a row deletion. It checks the entry again after the update and does not retry a write. Regular batch submissions still skip zero-hour values.
+
 ## JSON Schema
 
 Batch submission expects a JSON array:

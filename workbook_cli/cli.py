@@ -21,7 +21,7 @@ from .render import (
     render_timesheet,
     write_output,
 )
-from .timesheet import resume_submission, submit_entries, summarize_week
+from .timesheet import clear_entry, resume_submission, submit_entries, summarize_week
 
 
 def _client(*, headless: bool = True, force: bool = False, debug_auth: bool = False) -> WorkbookClient:
@@ -111,6 +111,11 @@ def cmd_timesheet(args: argparse.Namespace) -> None:
     client = _client()
     if args.timesheet_command == "show":
         write_output(summarize_week(client, args.week_offset), args=args, renderer=render_timesheet)
+        return
+
+    if args.timesheet_command == "delete":
+        result = clear_entry(client, args.entry_id, week_offset=args.week_offset, confirm=args.confirm)
+        write_output(result, args=args)
         return
 
     if args.resume:
@@ -244,6 +249,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_ts_submit.add_argument("--journal", help="Use this submission journal path")
     p_ts_submit.add_argument("--resume", metavar="JOURNAL", help="Resume an incomplete submission journal")
     p_ts_submit.set_defaults(func=cmd_timesheet)
+    p_ts_delete = ts_sub.add_parser("delete", help="Set one entry to zero hours. Preview by default.")
+    add_output_args(p_ts_delete)
+    p_ts_delete.add_argument("entry_id", type=int, help="Entry ID from timesheet show")
+    p_ts_delete.add_argument("--confirm", action="store_true", help="Apply the zero-hour update")
+    p_ts_delete.set_defaults(func=cmd_timesheet)
 
     p_config = sub.add_parser("config", help="Manage local configuration")
     add_output_args(p_config)

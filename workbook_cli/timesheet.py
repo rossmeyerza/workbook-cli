@@ -372,6 +372,49 @@ def _read_entries(client: WorkbookClient, anchor: str) -> list[dict]:
     return entries
 
 
+def _zero_hours(row: dict) -> bool:
+    if "Hours" not in row:
+        raise ValueError("Workbook did not return the hours for this entry.")
+    return row["Hours"] is None or float(row["Hours"]) == 0
+
+
+def clear_entry(client: WorkbookClient, entry_id: int, *, week_offset: int = 0, confirm: bool = False) -> dict:
+    """Set the hours of one existing entry to zero."""
+    entry_id = _positive_int(entry_id, "entry_id")
+    anchor = week_dates(week_offset)["Mon"]
+    matches = [row for row in _read_entries(client, anchor) if row.get("Id") == entry_id]
+    if len(matches) != 1:
+        raise ValueError(f"Expected one entry with ID {entry_id} in the week of {anchor[:10]}. Found {len(matches)}.")
+    row = matches[0]
+    result = {
+        "ok": True, "dry_run": not confirm, "entry_id": entry_id, "date": row.get("RegistrationDate"),
+        "job_id": row.get("JobId"), "task_id": row.get("TaskId"), "previous_hours": row.get("Hours"), "hours": 0,
+    }
+    if _zero_hours(row):
+        return {**result, "status": "already_zero"}
+    if not confirm:
+        return {**result, "status": "preview"}
+
+    if any(key not in row for key in ("ActivityId", "Billable", "TaskId", "Description")):
+        raise ValueError("Workbook did not return the metadata needed to preserve this entry. No update was made.")
+    try:
+        client.update_time_entry(
+            entry_id=entry_id, hours=0, task_id=row["TaskId"], description=row["Description"],
+            activity_id=row["ActivityId"], billable=row["Billable"],
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Workbook update failed or is uncertain. Check the entry before you retry: {exc}") from exc
+    try:
+        remaining = [row for row in _read_entries(client, anchor) if row.get("Id") == entry_id]
+        if not remaining:
+            return {**result, "status": "not_returned"}
+        if len(remaining) == 1 and _zero_hours(remaining[0]):
+            return {**result, "status": "zeroed"}
+    except Exception as exc:
+        raise RuntimeError(f"Could not verify the update. Check the entry before you retry: {exc}") from exc
+    raise RuntimeError("Workbook did not confirm zero hours. Check the entry before you retry.")
+
+
 def _set_error(operation: dict, status: str, message: str) -> None:
     operation["status"] = status
     operation["error"] = message
