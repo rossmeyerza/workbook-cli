@@ -20,6 +20,35 @@ python -m playwright install chromium
 workbook-cli config init --email you@company.com --password '...'
 ```
 
+## MCP server
+
+The installer also installs `workbook-mcp`, a local stdio server. It uses the same config, session, cache and journals as the CLI.
+
+Add this server to Pi:
+
+```bash
+pi mcp add workbook -- ~/.local/bin/workbook-mcp
+```
+
+Run `/reload` in an open Pi session. For another client, use the absolute path to `workbook-mcp` as the stdio command.
+
+| CLI | MCP tools |
+| --- | --- |
+| `auth [login\|status\|clear]` | `auth_login`, `auth_status`, `auth_clear` |
+| `me` | `me` |
+| `jobs list\|search\|tasks\|refresh` | `jobs_list`, `jobs_search`, `jobs_tasks`, `jobs_refresh` |
+| `timesheet show\|submit\|delete` | `timesheet_show`, `timesheet_submit`, `timesheet_delete` |
+| `config paths\|init` | `config_paths`, `config_init` |
+
+MCP uses named arguments instead of CLI flags. JSON results include structured data. Use `format: "table"` for table output or `pretty: true` to indent JSON text.
+
+- Pass an array or JSON text in `input_json` instead of `--input-json -`. Use `json_file` to read a local file.
+- Preview with `dry_run: true`. Live submissions, resumes, `auth_clear` and `config_init` require `confirm: true` after explicit user approval.
+- Use `auth_login` with `headed: true` for visible MFA. If the client times out, use `workbook-cli auth --headed` in a terminal.
+- Use the CLI for initial config, or supply `WORKBOOK_MCP_PASSWORD` through the server environment for `config_init`. Do not put the password in a tool call or client config.
+
+**Caution:** Use this server only with a trusted local client. Its tools can access local files and change Workbook timesheets.
+
 ## State
 
 No state is shared with other timesheet tools.

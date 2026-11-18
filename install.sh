@@ -67,6 +67,8 @@ ok "Python packages and Playwright Chromium installed"
 
 ln -sf "${INSTALL_DIR}/.venv/bin/workbook-cli" "${BIN_DIR}/workbook-cli"
 ok "workbook-cli linked to ${BIN_DIR}/workbook-cli"
+ln -sf "${INSTALL_DIR}/.venv/bin/workbook-mcp" "${BIN_DIR}/workbook-mcp"
+ok "workbook-mcp linked to ${BIN_DIR}/workbook-mcp"
 
 env_value() {
   local key="$1"
