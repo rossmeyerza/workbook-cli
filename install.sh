@@ -60,6 +60,9 @@ python3 -m venv "${INSTALL_DIR}/.venv"
 "${INSTALL_DIR}/.venv/bin/pip" install --quiet -e "$INSTALL_DIR"
 "${INSTALL_DIR}/.venv/bin/python" -m playwright install chromium --quiet 2>/dev/null || \
   "${INSTALL_DIR}/.venv/bin/python" -m playwright install chromium
+"${INSTALL_DIR}/.venv/bin/python" -c \
+  'from workbook_cli.client import WorkbookClient; status = WorkbookClient.browser_status(); print(status["executable"]); raise SystemExit(0 if status["installed"] else 1)' \
+  || die "Playwright Chromium or its headless shell was not installed."
 ok "Python packages and Playwright Chromium installed"
 
 ln -sf "${INSTALL_DIR}/.venv/bin/workbook-cli" "${BIN_DIR}/workbook-cli"

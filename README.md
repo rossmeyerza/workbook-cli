@@ -29,6 +29,8 @@ No state is shared with other timesheet tools.
 ~/.local/share/workbook-cli/session_state/api_cookies.json
 ~/.local/share/workbook-cli/session_state/browser_state.json
 ~/.local/share/workbook-cli/cache/jobs.json
+~/.local/share/workbook-cli/submissions/
+~/.local/share/workbook-cli/logs/
 ```
 
 ## Auth
@@ -44,6 +46,12 @@ workbook-cli auth clear
 
 Headless auth uses `WORKBOOK_EMAIL` and `WORKBOOK_PASSWORD` from `~/.config/workbook-cli/.env`, fills the Okta/Microsoft login form, prints the MFA number when one is displayed, and saves Workbook cookies.
 
+`auth status` checks only the saved session. It does not open a browser. If the browser is missing, repair it with:
+
+```bash
+~/.local/lib/workbook-cli/.venv/bin/python -m playwright install chromium
+```
+
 ## Jobs
 
 ```bash
@@ -55,6 +63,8 @@ workbook-cli --table jobs tasks 465430
 workbook-cli jobs search nespresso --table
 workbook-cli jobs tasks 465430 --table
 ```
+
+`jobs list` and `jobs search` use the local cache when it exists. They do not require authentication. Search includes job numbers and task numbers.
 
 ## Timesheets
 
@@ -94,6 +104,22 @@ workbook-cli --table timesheet submit --dry-run --input-json '[{"job_id":465430,
 workbook-cli timesheet submit --dry-run --input-json '[{"job_id":465430,"task_id":2886954,"hours":{"Mon":1}}]' --table
 ```
 
+Each live submission uses a durable journal. The CLI reads the changed cell back from Workbook before it reports success. If a run stops or a response is uncertain, use the journal path from the result:
+
+```bash
+workbook-cli timesheet submit --resume ~/.local/share/workbook-cli/submissions/submission_8092_2026-09-07_abcd1234.json --pretty
+```
+
+You can select a journal path for a new submission:
+
+```bash
+workbook-cli timesheet submit --journal ./submission.json --json-file ./timesheet.json
+```
+
+The CLI does not retry a write when Workbook might already have accepted it. It first uses the saved pre-write state and a readback to resolve the result. Mutation logs do not store cookies, credentials, or description text.
+
+A completed journal also prevents an unintended repeat of the same batch. Use a new `--journal` path only when you intend to apply the same batch again.
+
 Previous week:
 
 ```bash
@@ -122,6 +148,8 @@ Batch submission expects a JSON array:
 `--input-json` is the preferred payload flag. The older `timesheet submit --json '[...]'` form still works for compatibility, but `--json` by itself means JSON output.
 
 `hours` can also be a number, which applies to every weekday.
+
+Hours must be finite and non-negative. Job IDs and task IDs must be valid positive integers. The CLI rejects the complete batch before any write if one field is invalid.
 
 ## Notes
 

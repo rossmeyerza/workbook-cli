@@ -1,11 +1,45 @@
 from __future__ import annotations
 
+import json
+import os
+from datetime import datetime
+from pathlib import Path
 from urllib.parse import unquote
 
+import playwright
 import requests
 
 from . import config
 from .auth import load_cookies, login_via_browser, save_cookies
+
+
+class WorkbookAPIError(RuntimeError):
+    """A Workbook request failed.
+
+    ``may_have_succeeded`` is true when no safe retry decision can be made.
+    """
+
+    def __init__(self, message: str, *, may_have_succeeded: bool = False) -> None:
+        super().__init__(message)
+        self.may_have_succeeded = may_have_succeeded
+
+
+def _workbook_error_message(response: requests.Response) -> str:
+    try:
+        data = response.json()
+    except (ValueError, requests.JSONDecodeError):
+        data = None
+
+    if isinstance(data, dict):
+        for key in ("ErrorMessage", "Message", "message"):
+            if data.get(key):
+                return str(data[key])
+        status = data.get("ResponseStatus")
+        if isinstance(status, dict):
+            for key in ("Message", "ErrorCode"):
+                if status.get(key):
+                    return str(status[key])
+    return f"Workbook returned HTTP {response.status_code}"
 
 
 def _read_csrf_token(session: requests.Session) -> str:
@@ -27,12 +61,72 @@ class WorkbookClient:
         self.resource_id: int | None = None
         self.user_name: str | None = None
         self.csrf_token: str | None = None
+        self.last_error: str = ""
+
+    @staticmethod
+    def browser_status() -> dict:
+        """Return the expected Chromium path without starting a browser."""
+        package_dir = Path(playwright.__file__).resolve().parent
+        browsers_file = package_dir / "driver" / "package" / "browsers.json"
+        data = json.loads(browsers_file.read_text())
+        revisions = {
+            item["name"]: item["revision"]
+            for item in data.get("browsers", [])
+            if item.get("name") in {"chromium", "chromium-headless-shell"}
+        }
+        configured_root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        if configured_root == "0":
+            browser_root = package_dir / "driver" / "package" / ".local-browsers"
+        elif configured_root:
+            browser_root = Path(configured_root).expanduser()
+        else:
+            browser_root = Path.home() / ".cache" / "ms-playwright"
+
+        chromium_dir = browser_root / f"chromium-{revisions.get('chromium', 'unknown')}"
+        headless_dir = browser_root / f"chromium_headless_shell-{revisions.get('chromium-headless-shell', 'unknown')}"
+        executable_candidates = [
+            chromium_dir / "chrome-linux64" / "chrome",
+            chromium_dir / "chrome-linux" / "chrome",
+        ]
+        headless_candidates = [
+            headless_dir / "chrome-headless-shell-linux64" / "chrome-headless-shell",
+            headless_dir / "chrome-linux" / "headless_shell",
+        ]
+        executable = next((path for path in executable_candidates if path.is_file()), executable_candidates[0])
+        headless_executable = next((path for path in headless_candidates if path.is_file()), headless_candidates[0])
+        return {
+            "installed": executable.is_file() and headless_executable.is_file(),
+            "executable": str(executable),
+            "headless_executable": str(headless_executable),
+        }
+
+    def login_saved(self) -> bool:
+        """Check saved cookies without starting an interactive login."""
+        self.last_error = ""
+        if not self._load_saved_cookies():
+            self.last_error = "No usable saved Workbook session was found"
+            return False
+        self._setup_headers()
+        try:
+            ok = self.handshake()
+        except Exception as exc:
+            self.last_error = f"Saved Workbook session check failed: {exc}"
+            return False
+        if not ok:
+            self.last_error = "Saved Workbook session has expired"
+        return ok
 
     def login(self, *, headless: bool = True, force: bool = False, debug_auth: bool = False) -> bool:
-        if not force and self._load_saved_cookies():
-            self._setup_headers()
-            if self.handshake():
-                return True
+        if not force and self.login_saved():
+            return True
+
+        browser = self.browser_status()
+        if not browser["installed"]:
+            raise RuntimeError(
+                "Playwright Chromium is not installed. Run: "
+                f"{Path(__file__).resolve().parent.parent / '.venv/bin/python'} "
+                "-m playwright install chromium"
+            )
 
         cookies = login_via_browser(headless=headless, debug_auth=debug_auth)
         self._set_cookies(cookies)
@@ -119,6 +213,86 @@ class WorkbookClient:
         self.user_name = data.get("Name")
         return bool(self.resource_id)
 
+    def _list_response(self, response: requests.Response, operation: str) -> list[dict]:
+        if not response.ok:
+            raise WorkbookAPIError(_workbook_error_message(response))
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise WorkbookAPIError(f"Workbook returned invalid JSON for {operation}") from exc
+        if not isinstance(data, list):
+            raise WorkbookAPIError(f"Workbook returned unexpected data for {operation}")
+        return data
+
+    def _write_mutation_log(
+        self,
+        operation: str,
+        payload: dict,
+        *,
+        response: requests.Response | None = None,
+        error: str = "",
+    ) -> None:
+        """Write a diagnostic record without cookies, credentials, or descriptions."""
+        config.ensure_dirs()
+        safe_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"Description"}
+        }
+        if "Description" in payload:
+            safe_payload["description_length"] = len(str(payload.get("Description") or ""))
+        safe_error = error
+        for private_value in (
+            str(payload.get("Description") or ""),
+            config.WORKBOOK_EMAIL,
+            config.WORKBOOK_PASSWORD,
+        ):
+            if private_value:
+                safe_error = safe_error.replace(private_value, "<redacted>")
+        record = {
+            "operation": operation,
+            "time": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "payload": safe_payload,
+            "http_status": response.status_code if response is not None else None,
+            "error": safe_error,
+        }
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        path = config.LOG_DIR / f"mutation_{stamp}_{operation}.json"
+        path.write_text(json.dumps(record, indent=2) + "\n")
+        path.chmod(0o600)
+
+    def _mutating_post(self, endpoint: str, payload: dict, operation: str) -> dict:
+        url = f"{config.WORKBOOK_URL}/api/json/reply/{endpoint}"
+        try:
+            response = self.session.post(url, json=payload, timeout=config.API_TIMEOUT)
+        except requests.RequestException as exc:
+            message = f"Workbook {operation} request did not complete: {exc}"
+            self.last_error = message
+            self._write_mutation_log(operation, payload, error=message)
+            raise WorkbookAPIError(message, may_have_succeeded=True) from exc
+
+        if not response.ok:
+            message = _workbook_error_message(response)
+            self.last_error = message
+            self._write_mutation_log(operation, payload, response=response, error=message)
+            raise WorkbookAPIError(message, may_have_succeeded=response.status_code >= 500)
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            message = f"Workbook returned invalid JSON after {operation}"
+            self.last_error = message
+            self._write_mutation_log(operation, payload, response=response, error=message)
+            raise WorkbookAPIError(message, may_have_succeeded=True) from exc
+        if not isinstance(data, dict):
+            message = f"Workbook returned unexpected data after {operation}"
+            self.last_error = message
+            self._write_mutation_log(operation, payload, response=response, error=message)
+            raise WorkbookAPIError(message, may_have_succeeded=True)
+        self.last_error = ""
+        self._write_mutation_log(operation, payload, response=response)
+        return data
+
     def me(self) -> dict:
         return {"resource_id": self.resource_id, "name": self.user_name}
 
@@ -128,9 +302,7 @@ class WorkbookClient:
             params={"ResourceId": self.resource_id, "Date": date},
             timeout=config.API_TIMEOUT,
         )
-        response.raise_for_status()
-        data = response.json()
-        return data if isinstance(data, list) else []
+        return self._list_response(response, "timesheet read")
 
     def get_daily_entries(self, date: str) -> list[dict]:
         response = self.session.get(
@@ -138,9 +310,7 @@ class WorkbookClient:
             params={"ResourceId": self.resource_id, "Date": date, "Week": "true"},
             timeout=config.API_TIMEOUT,
         )
-        response.raise_for_status()
-        data = response.json()
-        return data if isinstance(data, list) else []
+        return self._list_response(response, "daily entry read")
 
     def get_allowed_jobs(self, date: str) -> list[dict]:
         response = self.session.get(
@@ -155,9 +325,7 @@ class WorkbookClient:
             },
             timeout=config.API_TIMEOUT,
         )
-        response.raise_for_status()
-        data = response.json()
-        return data if isinstance(data, list) else []
+        return self._list_response(response, "job list")
 
     def get_tasks_for_job(self, job_id: int) -> list[dict]:
         response = self.session.get(
@@ -175,24 +343,20 @@ class WorkbookClient:
             },
             timeout=config.API_TIMEOUT,
         )
-        response.raise_for_status()
-        data = response.json()
-        return data if isinstance(data, list) else []
+        return self._list_response(response, "task list")
 
     def quick_insert(self, *, job_id: int, task_id: int | None, date: str, check_week: bool = True) -> dict:
-        response = self.session.post(
-            f"{config.WORKBOOK_URL}/api/json/reply/QuickInsertTimeRequest",
-            json={
+        return self._mutating_post(
+            "QuickInsertTimeRequest",
+            {
                 "taskid": str(task_id) if task_id else None,
                 "jobid": job_id,
                 "resourceId": self.resource_id,
                 "date": date,
                 "CheckWeek": check_week,
             },
-            timeout=config.API_TIMEOUT,
+            "quick_insert",
         )
-        response.raise_for_status()
-        return response.json()
 
     def update_time_entry(
         self,
@@ -204,9 +368,9 @@ class WorkbookClient:
         activity_id: int = 530,
         billable: bool = True,
     ) -> dict:
-        response = self.session.post(
-            f"{config.WORKBOOK_URL}/api/json/reply/TimeEntryUpdateRequest",
-            json={
+        return self._mutating_post(
+            "TimeEntryUpdateRequest",
+            {
                 "Id": entry_id,
                 "ActivityId": activity_id,
                 "Billable": billable,
@@ -214,7 +378,5 @@ class WorkbookClient:
                 "TaskId": task_id or None,
                 "Description": description,
             },
-            timeout=config.API_TIMEOUT,
+            "update_time_entry",
         )
-        response.raise_for_status()
-        return response.json()

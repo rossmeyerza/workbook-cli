@@ -21,7 +21,7 @@ from .render import (
     render_timesheet,
     write_output,
 )
-from .timesheet import submit_entries, summarize_week
+from .timesheet import resume_submission, submit_entries, summarize_week
 
 
 def _client(*, headless: bool = True, force: bool = False, debug_auth: bool = False) -> WorkbookClient:
@@ -40,10 +40,15 @@ def cmd_auth(args: argparse.Namespace) -> None:
 
     if command == "status":
         client = WorkbookClient()
-        ok = client.login(headless=True, force=False, debug_auth=getattr(args, "debug_auth", False))
+        authenticated = client.login_saved()
+        browser = client.browser_status()
         write_output({
-            "ok": ok,
-            "user": client.me() if ok else None,
+            "ok": True,
+            "authenticated": authenticated,
+            "user": client.me() if authenticated else None,
+            "session_error": None if authenticated else client.last_error,
+            "browser_installed": browser["installed"],
+            "browser_executable": browser["executable"],
             "cookies_file": str(config.COOKIES_FILE),
             "browser_state_file": str(config.BROWSER_STATE_FILE),
         }, args=args, renderer=render_auth)
@@ -57,22 +62,24 @@ def cmd_me(args: argparse.Namespace) -> None:
     write_output(_client().me(), args=args, renderer=render_me)
 
 
-def _jobs_for_args(args: argparse.Namespace, client: WorkbookClient) -> list[dict]:
+def _jobs_for_args(args: argparse.Namespace, client: WorkbookClient | None = None) -> list[dict]:
     if args.refresh:
+        client = client or _client()
         jobs = fetch_jobs_with_tasks(client, week_dates(args.week_offset)["Mon"])
         save_jobs_cache(jobs)
         return jobs
     cache = load_jobs_cache()
     if cache and isinstance(cache.get("jobs"), list):
         return cache["jobs"]
+    client = client or _client()
     jobs = fetch_jobs_with_tasks(client, week_dates(args.week_offset)["Mon"])
     save_jobs_cache(jobs)
     return jobs
 
 
 def cmd_jobs(args: argparse.Namespace) -> None:
-    client = _client()
     if args.jobs_command == "tasks":
+        client = _client()
         tasks = client.get_tasks_for_job(args.job_id)
         write_output({
             "job_id": args.job_id,
@@ -84,6 +91,7 @@ def cmd_jobs(args: argparse.Namespace) -> None:
         return
 
     if args.jobs_command == "refresh":
+        client = _client()
         jobs = fetch_jobs_with_tasks(client, week_dates(args.week_offset)["Mon"])
         save_jobs_cache(jobs)
         write_output(
@@ -93,7 +101,7 @@ def cmd_jobs(args: argparse.Namespace) -> None:
         )
         return
 
-    jobs = _jobs_for_args(args, client)
+    jobs = _jobs_for_args(args)
     if args.jobs_command == "search":
         jobs = search_jobs(jobs, args.query)
     write_output({"count": len(jobs), "jobs": jobs}, args=args, renderer=render_jobs)
@@ -105,14 +113,20 @@ def cmd_timesheet(args: argparse.Namespace) -> None:
         write_output(summarize_week(client, args.week_offset), args=args, renderer=render_timesheet)
         return
 
-    payload = read_json_arg(args.input_json, args.json_file)
-    result = submit_entries(
-        client,
-        payload,
-        week_offset=args.week_offset,
-        dry_run=args.dry_run,
-        separate_rows=args.separate_rows,
-    )
+    if args.resume:
+        if args.input_json or args.json_file or args.dry_run or args.separate_rows:
+            raise ValueError("--resume cannot be combined with input, --dry-run, or --separate-rows")
+        result = resume_submission(client, args.resume)
+    else:
+        payload = read_json_arg(args.input_json, args.json_file)
+        result = submit_entries(
+            client,
+            payload,
+            week_offset=args.week_offset,
+            dry_run=args.dry_run,
+            separate_rows=args.separate_rows,
+            journal_path=args.journal,
+        )
     write_output(result, args=args, renderer=render_submit)
     if not result["ok"]:
         raise SystemExit(1)
@@ -126,6 +140,8 @@ def cmd_config(args: argparse.Namespace) -> None:
             "cookies_file": str(config.COOKIES_FILE),
             "browser_state_file": str(config.BROWSER_STATE_FILE),
             "jobs_cache_file": str(config.JOBS_CACHE_FILE),
+            "submission_dir": str(config.SUBMISSION_DIR),
+            "log_dir": str(config.LOG_DIR),
         }, args=args, renderer=render_paths)
         return
 
@@ -225,6 +241,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_ts_submit.add_argument("--json-file", help="Read JSON array payload from a file")
     p_ts_submit.add_argument("--dry-run", action="store_true", help="Plan changes without writing")
     p_ts_submit.add_argument("--separate-rows", action="store_true", help="Always create new Workbook rows")
+    p_ts_submit.add_argument("--journal", help="Use this submission journal path")
+    p_ts_submit.add_argument("--resume", metavar="JOURNAL", help="Resume an incomplete submission journal")
     p_ts_submit.set_defaults(func=cmd_timesheet)
 
     p_config = sub.add_parser("config", help="Manage local configuration")

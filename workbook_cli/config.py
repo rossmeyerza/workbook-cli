@@ -12,6 +12,8 @@ DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"
 SESSION_DIR = DATA_DIR / "session_state"
 CACHE_DIR = DATA_DIR / "cache"
 DEBUG_DIR = DATA_DIR / "debug"
+LOG_DIR = DATA_DIR / "logs"
+SUBMISSION_DIR = DATA_DIR / "submissions"
 
 CONFIG_FILE = CONFIG_DIR / ".env"
 PROJECT_ENV_FILE = PACKAGE_ROOT / ".env"
@@ -36,3 +38,5 @@ def ensure_dirs() -> None:
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    SUBMISSION_DIR.mkdir(parents=True, exist_ok=True)

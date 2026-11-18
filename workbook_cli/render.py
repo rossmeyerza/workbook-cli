@@ -27,7 +27,8 @@ def render_generic(data: Any) -> None:
 
 
 def render_auth(data: dict) -> None:
-    status = "[green]OK[/]" if data.get("ok") else "[red]Failed[/]"
+    authenticated = data.get("authenticated", data.get("ok"))
+    status = "[green]Authenticated[/]" if authenticated else "[yellow]Not authenticated[/]"
     user = data.get("user") or {}
     lines = [f"[bold]Status:[/] {status}"]
     if user:
@@ -35,6 +36,11 @@ def render_auth(data: dict) -> None:
         lines.append(f"[bold]Resource ID:[/] {user.get('resource_id') or '-'}")
     if data.get("cookies_file"):
         lines.append(f"[bold]Cookies:[/] {data['cookies_file']}")
+    if "browser_installed" in data:
+        browser = "Installed" if data["browser_installed"] else "Missing"
+        lines.append(f"[bold]Browser:[/] {browser}")
+    if data.get("session_error"):
+        lines.append(f"[bold]Session:[/] {data['session_error']}")
     console.print(Panel("\n".join(lines), title="Workbook Auth", border_style="cyan"))
 
 
@@ -127,6 +133,10 @@ def render_submit(data: dict) -> None:
         f"[bold]Week:[/] {data.get('week_start')}\n"
         f"[bold]Created:[/] {data.get('created', 0)}\n"
         f"[bold]Updated:[/] {data.get('updated', 0)}\n"
+        f"[bold]Planned hours:[/] {data.get('planned_hours', 0):g}\n"
+        f"[bold]Hours written:[/] {data.get('hours_written', 0):g}\n"
+        f"[bold]Hours not confirmed:[/] {data.get('hours_lost', 0):g}\n"
+        f"[bold]Journal:[/] {data.get('journal_path') or '-'}\n"
         f"[bold]Dry run:[/] {data.get('dry_run', False)}",
         title="Timesheet Submit",
         border_style="green" if data.get("ok") else "red",
